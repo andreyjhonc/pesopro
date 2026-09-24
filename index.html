@@ -46,6 +46,76 @@ Pechuga pollo 1kg - 6.50€
     });
   }
 </script>
+  <!-- Cliente de Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://bvjjdqywzbpvxjksderg.supabase.co';
+  const SUPABASE_KEY = 'PEGA_AQUI_TU_PUBLISHABLE_KEY_COMPLETA'; // <-- pega tu clave aquí
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const STORAGE_KEY = 'peso-app-definitiva-v1';
+  const RECORD_ID = 'mi_usuario_principal'; // Puedes poner cualquier nombre fijo
+
+  // 1. DESCARGAR AL ABRIR: si hay datos en Supabase, los sincroniza con el navegador actual
+  async function sincronizarDesdeNube() {
+    try {
+      const { data, error } = await supabase
+        .from('app_data')
+        .select('data')
+        .eq('id', RECORD_ID)
+        .single();
+
+      if (data && data.data) {
+        const local = localStorage.getItem(STORAGE_KEY);
+        const remotoStr = JSON.stringify(data.data);
+        
+        // Si en la nube hay datos y son diferentes a los locales, actualiza y recarga
+        if (local !== remotoStr) {
+          localStorage.setItem(STORAGE_KEY, remotoStr);
+          localStorage.setItem('peso-app-v2', remotoStr);
+          // Recargar suavemente para que React lea los nuevos datos
+          if (!sessionStorage.getItem('synced')) {
+            sessionStorage.setItem('synced', '1');
+            window.location.reload();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error sincronizando desde Supabase:', err);
+    }
+  }
+
+  // 2. SUBIR AUTOMÁTICAMENTE: intercepta cuando la app guarda datos en localStorage
+  const originalSetItem = localStorage.setItem;
+  let temporizadorGuardado = null;
+
+  localStorage.setItem = function(key, value) {
+    originalSetItem.apply(this, arguments);
+
+    if (key === STORAGE_KEY) {
+      clearTimeout(temporizadorGuardado);
+      temporizadorGuardado = setTimeout(async () => {
+        try {
+          const parsed = JSON.parse(value);
+          await supabase
+            .from('app_data')
+            .upsert({
+              id: RECORD_ID,
+              data: parsed,
+              updated_at: new Date().toISOString()
+            });
+          console.log('✓ Sincronizado en la nube (Supabase)');
+        } catch (e) {
+          console.error('Error subiendo a Supabase:', e);
+        }
+      }, 1000); // Espera 1s de inactividad para no saturar peticiones
+    }
+  };
+
+  // Ejecutar descarga al cargar la página
+  window.addEventListener('load', sincronizarDesdeNube);
+</script>
+
   
 </body>
 </html>
